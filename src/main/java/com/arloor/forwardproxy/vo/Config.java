@@ -25,30 +25,42 @@ public class Config {
         return httpConfig;
     }
 
+    /**
+     * 安全地获取配置值，自动trim前后空格
+     */
+    private static String getProperty(Properties properties, String key) {
+        String value = properties.getProperty(key);
+        return value != null ? value.trim() : null;
+    }
+
     public static Config parse(Properties properties) {
 
         Config config = new Config();
-        ask4Authcate = TRUE.equals(properties.getProperty("ask4Authcate"));
-        log.info("解析配置 - ask4Authcate: {}", ask4Authcate);
+        String ask4AuthcateValue = getProperty(properties, "ask4Authcate");
+        ask4Authcate = TRUE.equals(ask4AuthcateValue);
+        log.info("解析配置 - ask4Authcate: {} (原始值: {})", ask4Authcate, ask4AuthcateValue);
 
-        String httpsEnable = properties.getProperty("https.enable");
-        log.info("解析配置 - https.enable: {}", httpsEnable);
+        String httpsEnable = getProperty(properties, "https.enable");
+        log.info("解析配置 - https.enable: {} (原始值: {})", httpsEnable, properties.getProperty("https.enable"));
         if (TRUE.equals(httpsEnable)) {
             try {
-                String httpsPortStr = properties.getProperty("https.port");
+                String httpsPortStr = getProperty(properties, "https.port");
                 log.info("解析配置 - https.port: {}", httpsPortStr);
                 Integer port = Integer.parseInt(httpsPortStr);
-                String auth = properties.getProperty("https.auth");
+                String auth = getProperty(properties, "https.auth");
                 log.info("解析配置 - https.auth: {}", auth != null ? "已配置" : "未配置");
                 Map<String, String> users = new HashMap<>();
                 if (auth != null && auth.length() != 0) {
                     for (String user : auth.split(",")) {
-                        users.computeIfAbsent(genBasicAuth(user), (cell) -> user);
-                        users.computeIfAbsent(genBasicAuthWithOut£(user), (cell) -> user);
+                        String trimmedUser = user.trim();
+                        if (trimmedUser.length() > 0) {
+                            users.computeIfAbsent(genBasicAuth(trimmedUser), (cell) -> trimmedUser);
+                            users.computeIfAbsent(genBasicAuthWithOut£(trimmedUser), (cell) -> trimmedUser);
+                        }
                     }
                 }
-                String fullchain = properties.getProperty("https.fullchain.pem");
-                String privkey = properties.getProperty("https.privkey.pem");
+                String fullchain = getProperty(properties, "https.fullchain.pem");
+                String privkey = getProperty(properties, "https.privkey.pem");
                 log.info("解析配置 - https.fullchain.pem: {}, https.privkey.pem: {}", fullchain, privkey);
                 SslConfig sslConfig = new SslConfig(port, users, fullchain, privkey);
                 config.sslConfig = sslConfig;
@@ -57,34 +69,40 @@ public class Config {
                 log.error("解析HTTPS配置失败", e);
             }
         } else {
-            log.info("HTTPS代理未启用");
+            log.info("HTTPS代理未启用 - 原因: http.enable的值不是'true' (实际值: '{}')", httpsEnable);
         }
 
-        String httpEnable = properties.getProperty("http.enable");
-        log.info("解析配置 - http.enable: {}", httpEnable);
+        String httpEnable = getProperty(properties, "http.enable");
+        log.info("解析配置 - http.enable: {} (原始值: '{}')", httpEnable, properties.getProperty("http.enable"));
         if (TRUE.equals(httpEnable)) {
             try {
-                String httpPortStr = properties.getProperty("http.port");
+                String httpPortStr = getProperty(properties, "http.port");
                 log.info("解析配置 - http.port: {}", httpPortStr);
                 Integer port = Integer.parseInt(httpPortStr);
-                String auth = properties.getProperty("http.auth");
+                String auth = getProperty(properties, "http.auth");
                 log.info("解析配置 - http.auth: {}", auth != null ? "已配置" : "未配置");
                 Map<String, String> users = new HashMap<>();
                 if (auth != null && auth.length() != 0) {
                     for (String user : auth.split(",")) {
-                        users.computeIfAbsent(genBasicAuth(user), (cell) -> user);
-                        users.computeIfAbsent(genBasicAuthWithOut£(user), (cell) -> user);
+                        String trimmedUser = user.trim();
+                        if (trimmedUser.length() > 0) {
+                            users.computeIfAbsent(genBasicAuth(trimmedUser), (cell) -> trimmedUser);
+                            users.computeIfAbsent(genBasicAuthWithOut£(trimmedUser), (cell) -> trimmedUser);
+                        }
                     }
                 }
-                String whiteDomains = properties.getProperty("http.proxy.white.domain", "");
+                String whiteDomains = getProperty(properties, "http.proxy.white.domain");
+                if (whiteDomains == null) {
+                    whiteDomains = "";
+                }
                 log.info("解析配置 - http.proxy.white.domain: {}", whiteDomains);
-                config.httpConfig = new HttpConfig(port, users, Arrays.stream(whiteDomains.split(",")).filter(s -> s != null && s.length() != 0).collect(Collectors.toSet()));
+                config.httpConfig = new HttpConfig(port, users, Arrays.stream(whiteDomains.split(",")).filter(s -> s != null && s.trim().length() != 0).map(String::trim).collect(Collectors.toSet()));
                 log.info("HTTP配置解析成功 - 端口: {}, 需要认证: {}", port, config.httpConfig.needAuth());
             } catch (Exception e) {
                 log.error("解析HTTP配置失败", e);
             }
         } else {
-            log.info("HTTP代理未启用");
+            log.info("HTTP代理未启用 - 原因: http.enable的值不是'true' (实际值: '{}')", httpEnable);
         }
 
         log.info("配置解析完成 - HTTP配置: {}, HTTPS配置: {}", config.httpConfig != null ? "已创建" : "未创建", config.sslConfig != null ? "已创建" : "未创建");
