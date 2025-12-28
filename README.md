@@ -47,8 +47,15 @@ direct_memory_total{host="localhost",} 33554439
 
 ```shell
 # 需要使用jdk17
-maven clean package
-java -jar target/httpproxy-1.0-SNAPSHOT-all.jar -c proxy.properties
+mvn clean package
+# 添加 --add-opens 参数用于监控 netty 直接内存（JDK 16+ 必需）
+java --add-opens java.base/java.nio=ALL-UNNAMED -jar target/httpproxy-1.0-SNAPSHOT-all.jar -c proxy.properties
+```
+
+**推荐使用启动脚本：**
+```shell
+# 使用启动脚本（自动包含所有必要参数）
+bash start.sh
 ```
 
 ### 配置文件说明

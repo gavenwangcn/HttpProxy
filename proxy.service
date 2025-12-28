@@ -1,14 +1,29 @@
 [Unit]
-Description=forwardproxy-Http代理
+Description=HttpProxy - HTTP/HTTPS Forward Proxy Server
 After=network-online.target
 Wants=network-online.target
 
 [Service]
+Type=simple
+User=root
 WorkingDirectory=/opt/proxy
-ExecStart=/usr/bin/java -jar forwardproxy-1.0-jar-with-dependencies.jar -c /opt/proxy/proxy.properties
-LimitNOFILE=100000
+ExecStart=/usr/bin/java --add-opens java.base/java.nio=ALL-UNNAMED -jar /opt/proxy/httpproxy-1.0-SNAPSHOT-all.jar -c /opt/proxy/proxy.properties
+ExecStop=/bin/kill -TERM $MAINPID
 Restart=always
-RestartSec=30
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=httpproxy
+
+# 环境变量配置（如果 install-jdk17-maven.sh 已安装）
+EnvironmentFile=-/etc/profile.d/jdk17-maven.sh
+
+# 资源限制
+LimitNOFILE=100000
+
+# 安全设置
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
