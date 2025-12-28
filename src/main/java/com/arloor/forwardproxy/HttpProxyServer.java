@@ -33,29 +33,48 @@ public final class HttpProxyServer {
         log.info("主动要求验证：" + Config.ask4Authcate);
         SslConfig sslConfig = config.ssl();
         HttpConfig httpConfig = config.http();
+        
+        log.info("配置检查 - SSL配置: {}, HTTP配置: {}", sslConfig != null ? "已创建" : "未创建", httpConfig != null ? "已创建" : "未创建");
 
         EventLoopGroup bossGroup = OsUtils.buildEventLoopGroup(1);
         EventLoopGroup workerGroup = OsUtils.buildEventLoopGroup(0);
         try {
             if (sslConfig != null && httpConfig != null) {
+                log.info("同时启动HTTPS和HTTP代理服务");
                 Channel sslChannel = startSSl(bossGroup, workerGroup, sslConfig);
                 Channel httpChannel = startHttp(bossGroup, workerGroup, httpConfig);
                 if (httpChannel != null) {
+                    log.info("HTTP代理服务已启动，等待关闭...");
                     httpChannel.closeFuture().sync();
+                } else {
+                    log.warn("HTTP代理服务启动失败");
                 }
                 if (sslChannel != null) {
+                    log.info("HTTPS代理服务已启动，等待关闭...");
                     sslChannel.closeFuture().sync();
+                } else {
+                    log.warn("HTTPS代理服务启动失败");
                 }
             } else if (sslConfig != null) {
-                Channel httpChannel = startSSl(bossGroup, workerGroup, sslConfig);
-                if (httpChannel != null) {
-                    httpChannel.closeFuture().sync();
+                log.info("仅启动HTTPS代理服务");
+                Channel sslChannel = startSSl(bossGroup, workerGroup, sslConfig);
+                if (sslChannel != null) {
+                    log.info("HTTPS代理服务已启动，等待关闭...");
+                    sslChannel.closeFuture().sync();
+                } else {
+                    log.warn("HTTPS代理服务启动失败");
                 }
             } else if (httpConfig != null) {
-                Channel sslChannel = startHttp(bossGroup, workerGroup, httpConfig);
-                if (sslChannel != null) {
-                    sslChannel.closeFuture().sync();
+                log.info("仅启动HTTP代理服务");
+                Channel httpChannel = startHttp(bossGroup, workerGroup, httpConfig);
+                if (httpChannel != null) {
+                    log.info("HTTP代理服务已启动，等待关闭...");
+                    httpChannel.closeFuture().sync();
+                } else {
+                    log.warn("HTTP代理服务启动失败");
                 }
+            } else {
+                log.error("未配置任何代理服务（HTTP和HTTPS都未启用）");
             }
         } catch (InterruptedException e) {
             log.error("interrupt!", e);
@@ -69,18 +88,29 @@ public final class HttpProxyServer {
         Properties properties = new Properties();
         try {
             if (propertiesPath != null) {
-                properties.load(new FileReader(new File(propertiesPath)));
+                log.info("从指定路径加载配置文件: {}", propertiesPath);
+                File configFile = new File(propertiesPath);
+                if (!configFile.exists()) {
+                    log.error("配置文件不存在: {}", propertiesPath);
+                } else {
+                    log.info("配置文件存在，文件大小: {} bytes", configFile.length());
+                }
+                properties.load(new FileReader(configFile));
+                log.info("配置文件加载成功，共 {} 个配置项", properties.size());
             } else {
+                log.info("从classpath加载默认配置文件: proxy.properties");
                 properties.load(HttpProxyServer.class.getClassLoader().getResourceAsStream("proxy.properties"));
+                log.info("默认配置文件加载成功，共 {} 个配置项", properties.size());
             }
         } catch (Exception e) {
-            log.error("loadProperties Error!", e);
+            log.error("加载配置文件失败 - 路径: {}", propertiesPath, e);
         }
         return properties;
     }
 
 
     public static Channel startHttp(EventLoopGroup bossGroup, EventLoopGroup workerGroup, HttpConfig httpConfig) {
+        log.info("开始启动HTTP代理服务 - 端口: {}, 需要认证: {}", httpConfig.getPort(), httpConfig.needAuth());
         try {
             // Configure the server.
             ServerBootstrap b = new ServerBootstrap();
@@ -89,16 +119,19 @@ public final class HttpProxyServer {
                     .channel(OsUtils.serverSocketChannelClazz())
                     .childHandler(new HttpProxyServerInitializer(httpConfig));
 
+            log.info("正在绑定HTTP代理端口: {}", httpConfig.getPort());
             Channel httpChannel = b.bind(httpConfig.getPort()).sync().channel();
-            log.info("http proxy@ port={} auth={} url=http://localhost:{}",httpConfig.getPort(), httpConfig.needAuth(),httpConfig.getPort());
+            log.info("HTTP代理服务启动成功 - port={} auth={} url=http://localhost:{}", httpConfig.getPort(), httpConfig.needAuth(), httpConfig.getPort());
             return httpChannel;
         } catch (Exception e) {
-            log.error("无法启动Http Proxy", e);
+            log.error("无法启动HTTP代理服务 - 端口: {}, 错误信息: {}", httpConfig.getPort(), e.getMessage(), e);
         }
         return null;
     }
 
     public static Channel startSSl(EventLoopGroup bossGroup, EventLoopGroup workerGroup, SslConfig sslConfig) {
+        log.info("开始启动HTTPS代理服务 - 端口: {}, 需要认证: {}, 证书: {}, 私钥: {}", 
+                sslConfig.getPort(), sslConfig.needAuth(), sslConfig.getFullchain(), sslConfig.getPrivkey());
         try {
             // Configure the server.
             ServerBootstrap b = new ServerBootstrap();
@@ -108,16 +141,17 @@ public final class HttpProxyServer {
                     .channel(OsUtils.serverSocketChannelClazz())
                     .childHandler(initializer);
 
+            log.info("正在绑定HTTPS代理端口: {}", sslConfig.getPort());
             Channel sslChannel = b.bind(sslConfig.getPort()).sync().channel();
             // 每天更新一次ssl证书
             sslChannel.eventLoop().scheduleAtFixedRate(() -> {
                 log.info("定时重加载ssl证书！");
                 initializer.loadSslContext();
             }, 1, 1, TimeUnit.DAYS);
-            log.info("https proxy@ port={} auth={} url:https://localhost:{}" ,sslConfig.getPort(), sslConfig.needAuth(),sslConfig.getPort());
+            log.info("HTTPS代理服务启动成功 - port={} auth={} url:https://localhost:{}", sslConfig.getPort(), sslConfig.needAuth(), sslConfig.getPort());
             return sslChannel;
         } catch (Exception e) {
-            log.error("无法启动Https Proxy", e);
+            log.error("无法启动HTTPS代理服务 - 端口: {}, 错误信息: {}", sslConfig.getPort(), e.getMessage(), e);
         }
         return null;
     }
